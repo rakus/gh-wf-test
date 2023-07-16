@@ -15,16 +15,17 @@ html: ${TGT_DIR}/tutorial.html ${TGT_DIR}/parseargs.html
 man: ${TGT_DIR}/parseargs.1 ${TGT_DIR}/parseargs.1.gz
 
 ${TGT_DIR}/tutorial.html: tutorial.adoc
-	asciidoctor -a source-highlighter=pygments -o $@ $^
+	asciidoctor -a "version=${VERSION}" -a source-highlighter=pygments -o $@ $^
 
 ${TGT_DIR}/parseargs.html: parseargs.1.adoc
-	asciidoctor -a "manversion=${VERSION}" -a source-highlighter=pygments -o $@ $^
+	asciidoctor -a "version=${VERSION}" -a source-highlighter=pygments -o $@ $^
 
 ${TGT_DIR}/parseargs.1: parseargs.1.adoc
-	asciidoctor -a "manversion=${VERSION}" -b manpage -o $@ $^
+	asciidoctor -a "version=${VERSION}" -b manpage -o $@ $^
 
 ${TGT_DIR}/parseargs.1.gz: ${TGT_DIR}/parseargs.1
-	gzip -9 -n -k ${TGT_DIR}/parseargs.1
+	rm -f $@
+	gzip -9 -n -k $^
 
 site: html
 	mkdir -p ${TGT_DIR}/site

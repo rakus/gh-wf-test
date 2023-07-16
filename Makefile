@@ -1,21 +1,33 @@
 #
-# Makefile for
+# Makefile for Parseargs
 #
 
 # Phony targets represents recipes, not files
-.PHONY: help debug-build release-build test script-test clean doc rpm deb zip
-
-DEBUG_TGT := target/debug/parseargs
-RELEASE_TGT := target/release/parseargs
+.PHONY: help debug-build release-build test script-test clean doc rpm deb prepare-archive zip tar
 
 SRCFILES := $(wildcard src/*.rs src/**/*.rs)
-
-VERSION := $(shell cargo get version)
 
 OS_NAME := $(shell uname -s | tr A-Z a-z)
 PROC_NAME := $(shell uname -m)
 
 BUILD_ENV := ${PROC_NAME}-${OS_NAME}
+
+ifneq (,$(findstring windows,$(shell echo $(OS) | tr A-Z a-z)))
+	EXE_EXT := .exe
+else
+	EXE_EXT :=
+endif
+
+ROOT_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+
+VERSION := $(shell cargo get version)
+ifndef VERSION
+$(error VERSION is not set - missing 'cargo get'?)
+endif
+
+DEBUG_TGT := target/debug/parseargs${EXE_EXT}
+RELEASE_TGT := target/release/parseargs${EXE_EXT}
+
 
 debug-build: ${DEBUG_TGT}                    ## Debug build the application using cargo
 
@@ -40,7 +52,6 @@ check: clean debug-build test                ## run clean debug build, format ch
 	( cd script-test && shellcheck -fgcc -x -a *.sh )
 
 doc:
-	@test -n "${VERSION}" || ( echo "Error: VERSION not extracted from Cargo.toml. Is 'cargo get' installed?"; exit 1 )
 	( cd doc && make VERSION=${VERSION} )
 
 rpm: release-build doc                       ## Build rpm package
@@ -53,11 +64,23 @@ deb: release-build doc                       ## Build deb package
 
 pkg: rpm deb                                 ## Build rpm & deb packages
 
-zip: target/parseargs-${VERSION}-${BUILD_ENV}.zip
+zip: target/parseargs-${VERSION}-${BUILD_ENV}.zip      # build zip of release build (incl man page as html)
 
-target/parseargs-${VERSION}-${BUILD_ENV}.zip: release-build doc
-	@test -n "${VERSION}" || ( echo "Error: VERSION not extracted from Cargo.toml. Is 'cargo get' installed?"; exit 1 )
-	zip $@ target/release/parseargs{,.exe} doc/target/parseargs.html
+tar: target/parseargs-${VERSION}-${BUILD_ENV}.tar.gz   # build tar.gz of release build (incl man page as html)
+
+prepare-archive: release-build doc
+	rm -rf target/archive
+	mkdir -p  target/archive
+	cp target/release/parseargs${EXE_EXT} doc/target/parseargs.html target/archive
+
+
+target/parseargs-${VERSION}-${BUILD_ENV}.zip: prepare-archive
+	rm -f $@
+	zip -j --must-match $@ target/archive/*
+
+target/parseargs-${VERSION}-${BUILD_ENV}.tar.gz: prepare-archive
+	rm -f $@
+	(cd target/archive && tar -czvf ${ROOT_DIR}$@ *)
 
 setup:                                       ## Install needed cargo commands
 	cargo install cargo-get

@@ -1,14 +1,9 @@
 
-# Playing with GitHub Actions using Parseargs
+# Parseargs
 
 **A command line option parser for shell scripts.**
 
----
-
-:warning: This is in an early state of development.
-Have a look at section [TODO](#todo) below.
-
----
+[![Build and Test](https://github.com/rakus/parseargs/actions/workflows/verify.yaml/badge.svg)](https://github.com/rakus/parseargs/actions/workflows/verify.yaml)
 
 Parseargs parses given shell script parameters based on a given
 option definition. Depending on the given options shell code is
@@ -38,15 +33,14 @@ Parseargs parses the given options and creates shell code to set
 variables. It also prints error messages and exits the script on
 unknown options.
 
-To investigate the generated code just call Parseargs from the
-command line.
-
-The [Tutorial] explains all features of Parseargs.
+The [Tutorial] explains all features using examples.
 
 ## Building
 
-Build is controlled by a Makefile.  Run `make help` to get a help on the
-available targets.
+Normal cargo commands can be used.
+
+Additional steps are provided via Makefile.
+Run `make help` to get help on the available targets.
 
 ### Prerequisites
 
@@ -54,8 +48,8 @@ Some additional tools are needed for building and testing Parseargs.
 
 **Basics**
 
-* cargo get - To extract info from `Cargo.toml` (`cargo install cargo-get`).
-* ShellCheck - Linter for shell code. Used in tests (install using your package manager).
+* cargo get - To extract info from `Cargo.toml`. (`cargo install cargo-get`).
+* [ShellCheck] - Linter for shell code. Used in tests. Install using your package manager. As a shell programmer you should use it anyway.
 
 **Documentation**
 
@@ -64,19 +58,19 @@ Some additional tools are needed for building and testing Parseargs.
 
 **Package Build**
 
-* cargo generate-rpm - Pure Rust RPM builder. `cargo install cargo-generate-rpm`
-* cargo deb - Pure Rust Debian package builder. `cargo install cargo-deb`
+* cargo generate-rpm - Pure Rust RPM builder. (`cargo install cargo-generate-rpm`)
+* cargo deb - Pure Rust Debian package builder. (`cargo install cargo-deb`)
 
 ## TODO
 
 This tool is in an early state and there are areas that need further
 improvements
 
-* Improve error messages from option definition parser.
-* Gracefully handle arguments with invalid UTF-8 chars. Today it just error exits.
-* To many `clone()` calls -- most likely a general Rust newbie problem.
+* Handle arguments with invalid UTF-8 chars. Today it just error exits.
+* To many Strings where string slices should be used -- most likely a general Rust newbie problem.
 
 
 [Tutorial]: https://rakus.github.io/parseargs/
+[ShellCheck]: https://www.shellcheck.net/
 [Asciidoctor install page]: https://docs.asciidoctor.org/asciidoctor/latest/install/
 [Pygments install page]: https://docs.asciidoctor.org/asciidoctor/latest/syntax-highlighting/pygments/

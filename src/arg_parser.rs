@@ -59,7 +59,7 @@ pub struct CmdLineTokenizer {
 }
 
 impl CmdLineTokenizer {
-    pub fn build(args: Vec<String>, posix: bool) -> CmdLineTokenizer {
+    pub fn new(args: Vec<String>, posix: bool) -> CmdLineTokenizer {
         CmdLineTokenizer {
             cmd_line_args: args,
             cmd_line_args_idx: 0,
@@ -69,7 +69,7 @@ impl CmdLineTokenizer {
         }
     }
 
-    // Internal: get next part (seperated string) from the command line.
+    // Internal: get next part (separated string) from the command line.
     fn next_part(&mut self) -> Option<String> {
         if self.cmd_line_args_idx >= self.cmd_line_args.len() {
             None
@@ -80,9 +80,7 @@ impl CmdLineTokenizer {
         }
     }
 
-    /**
-     * Returns the next command line element.
-     */
+    /// Returns the next command line element or `None`.
     pub fn next(&mut self) -> Option<CmdLineElement> {
         if !self.left_over.is_empty() {
             // next character from combined short options (-xyz)
@@ -95,8 +93,12 @@ impl CmdLineTokenizer {
                 None => None,
                 Some(s) => {
                     if s.eq("--") {
-                        self.args_only = true;
-                        Some(CmdLineElement::Separator)
+                        if self.args_only {
+                            Some(CmdLineElement::Argument(s))
+                        } else {
+                            self.args_only = true;
+                            Some(CmdLineElement::Separator)
+                        }
                     } else if s.eq("-") {
                         if self.posix {
                             self.args_only = true;
@@ -128,10 +130,8 @@ impl CmdLineTokenizer {
         }
     }
 
-    /**
-     * Returns an argument for a previous option.
-     * Also handles combined options like `-ooutfile`.
-     */
+    /// Returns an argument for a previous option.
+    /// Also handles combined options like `-ooutfile`.
     pub fn get_option_argument(&mut self) -> Option<String> {
         if !self.left_over.is_empty() {
             let ret = Some(self.left_over.clone().into_iter().collect());
@@ -187,7 +187,7 @@ mod arg_parser_tests {
         .map(String::from)
         .to_vec();
 
-        let mut pa = CmdLineTokenizer::build(args, false);
+        let mut pa = CmdLineTokenizer::new(args, false);
 
         assert_eq!(Some(CmdLineElement::ShortOption('d')), pa.next());
         assert_eq!(Some(CmdLineElement::ShortOption('o')), pa.next());
@@ -215,7 +215,7 @@ mod arg_parser_tests {
             .map(String::from)
             .to_vec();
 
-        let mut pa = CmdLineTokenizer::build(args, false);
+        let mut pa = CmdLineTokenizer::new(args, false);
 
         assert_eq!(Some(CmdLineElement::Argument("one".to_string())), pa.next());
         assert_eq!(Some(CmdLineElement::ShortOption('d')), pa.next());
@@ -236,7 +236,7 @@ mod arg_parser_tests {
     fn test_combined() {
         let args = ["-dooutfile", "one"].map(String::from).to_vec();
 
-        let mut pa = CmdLineTokenizer::build(args, false);
+        let mut pa = CmdLineTokenizer::new(args, false);
 
         assert_eq!(Some(CmdLineElement::ShortOption('d')), pa.next());
         assert_eq!(Some(CmdLineElement::ShortOption('o')), pa.next());
@@ -249,7 +249,7 @@ mod arg_parser_tests {
     fn test_dash_dash() {
         let args = ["-d", "--", "-o"].map(String::from).to_vec();
 
-        let mut pa = CmdLineTokenizer::build(args, false);
+        let mut pa = CmdLineTokenizer::new(args, false);
 
         assert_eq!(Some(CmdLineElement::ShortOption('d')), pa.next());
         assert_eq!(Some(CmdLineElement::Separator), pa.next());
@@ -263,7 +263,7 @@ mod arg_parser_tests {
             .map(String::from)
             .to_vec();
 
-        let mut pa = CmdLineTokenizer::build(args, true);
+        let mut pa = CmdLineTokenizer::new(args, true);
 
         assert_eq!(Some(CmdLineElement::ShortOption('d')), pa.next());
         assert_eq!(Some(CmdLineElement::Argument("one".to_string())), pa.next());
@@ -286,7 +286,7 @@ mod arg_parser_tests {
             .map(String::from)
             .to_vec();
 
-        let mut pa = CmdLineTokenizer::build(args, true);
+        let mut pa = CmdLineTokenizer::new(args, true);
 
         assert_eq!(Some(CmdLineElement::ShortOption('d')), pa.next());
         assert_eq!(Some(CmdLineElement::Argument("-".to_string())), pa.next());

@@ -6,6 +6,7 @@
  */
 
 use crate::arg_parser::CmdLineElement;
+use std::cell::Cell;
 
 /**
  * Target for a option. Parseargs either assigns a variable or calls
@@ -60,9 +61,9 @@ pub struct OptConfig {
     // Typically used for '--help' etc.
     pub singleton: bool,
     // Runtime: Whether this variable has been set
-    pub assigned: bool,
+    pub assigned: Cell<bool>,
     // Runtime: Count of a counting variable
-    pub count_value: u16,
+    pub count_value: Cell<u16>,
 }
 
 impl OptConfig {
@@ -345,7 +346,7 @@ fn is_valid_opt_char(chr: char, first: bool, allow_utf8: bool) -> bool {
  * This handles backslash-escapes for certain characters.
  */
 fn get_option_char(ps: &mut ParserSource, first: bool) -> Option<char> {
-    let forbidden = vec![':', '#', '=', '+', '%'];
+    let need_escape = [':', '#', '=', '+', '%'];
 
     match ps.next() {
         Some(c) => {
@@ -362,7 +363,7 @@ fn get_option_char(ps: &mut ParserSource, first: bool) -> Option<char> {
                     None => Some(c),
                 }
             } else if is_valid_opt_char(c, first, ps.config.allow_utf8_options)
-                && !forbidden.contains(&c)
+                && !need_escape.contains(&c)
             {
                 Some(c)
             } else {
@@ -469,7 +470,9 @@ fn parse_flag_mode(ps: &mut ParserSource) -> Result<(OptType, Option<OptAttribut
 
     let target_name = match parse_name(ps) {
         Ok(name) => name,
-        Err(ParsingError::Empty) => Err(ParsingError::Error("name expected".to_string()))?,
+        Err(ParsingError::Empty) => {
+            Err(ParsingError::Error("name expected after this".to_string()))?
+        }
         Err(ParsingError::Error(msg)) => Err(ParsingError::Error(msg))?,
     };
 
@@ -508,7 +511,9 @@ fn parse_assignment(
 
     let target_name = match parse_name(ps) {
         Ok(name) => name,
-        Err(ParsingError::Empty) => Err(ParsingError::Error("name expected".to_string()))?,
+        Err(ParsingError::Empty) => {
+            Err(ParsingError::Error("name expected after this".to_string()))?
+        }
         Err(ParsingError::Error(msg)) => Err(ParsingError::Error(msg))?,
     };
 
@@ -537,7 +542,9 @@ fn parse_counter(ps: &mut ParserSource) -> Result<(OptType, Option<OptAttribute>
 
     let target_name = match parse_name(ps) {
         Ok(name) => name,
-        Err(ParsingError::Empty) => Err(ParsingError::Error("name expected".to_string()))?,
+        Err(ParsingError::Empty) => {
+            Err(ParsingError::Error("name expected after this".to_string()))?
+        }
         Err(ParsingError::Error(msg)) => Err(ParsingError::Error(msg))?,
     };
 
@@ -571,7 +578,15 @@ fn parse_opt_def(ps: &mut ParserSource) -> Result<OptConfig, ParsingError> {
                 }
             }
             Err(ParsingError::Empty) => {
-                return Err(ParsingError::Error("option expected".to_string()));
+                if ps.index == 0 {
+                    return Err(ParsingError::Error(
+                        "option char/string expected".to_string(),
+                    ));
+                } else {
+                    return Err(ParsingError::Error(
+                        "option char/string expected after this".to_string(),
+                    ));
+                }
             }
             Err(ParsingError::Error(msg)) => {
                 return Err(ParsingError::Error(msg));
@@ -585,45 +600,26 @@ fn parse_opt_def(ps: &mut ParserSource) -> Result<OptConfig, ParsingError> {
 
     // parse option type and name
     ps.push_pos();
-    let opt_type = match parse_flag_mode(ps) {
-        Ok(ot) => Some(ot),
-        Err(ParsingError::Error(s)) => Err(ParsingError::Error(s))?,
-        Err(ParsingError::Empty) => {
-            // jump back to the last pushed position
-            ps.reset_pos();
-            match parse_assignment(ps) {
-                Ok(ot) => Some(ot),
-                Err(ParsingError::Error(s)) => Err(ParsingError::Error(s))?,
-                Err(ParsingError::Empty) => {
-                    ps.pop_pos();
-                    ps.push_pos();
-                    match parse_counter(ps) {
-                        Ok(ot) => Some(ot),
-                        Err(ParsingError::Empty) => None,
-                        Err(ParsingError::Error(s)) => Err(ParsingError::Error(s))?,
-                    }
-                }
-            }
-        }
-    };
 
-    if opt_type.is_none() {
-        Err(ParsingError::Error(
-            "option type char (#=+) expected".to_string(),
-        ))?
-    }
+    let opt_type = match ps.peek() {
+        Some('#') => parse_flag_mode(ps),
+        Some('=') => parse_assignment(ps),
+        Some('+') => parse_counter(ps),
+        _ => Err(ParsingError::Error(
+            "Expected #, = or + after this".to_string(),
+        )),
+    }?;
 
-    let tuple = opt_type.unwrap();
-    let opt_attr = tuple.1;
+    let opt_attr = opt_type.1;
 
     Ok(OptConfig {
         opt_chars: short,
         opt_strings: long,
-        opt_type: tuple.0,
+        opt_type: opt_type.0,
         required: opt_attr == Some(OptAttribute::Required),
         singleton: opt_attr == Some(OptAttribute::Singleton),
-        assigned: false,
-        count_value: 0,
+        assigned: Cell::new(false),
+        count_value: Cell::new(0),
     })
 }
 
@@ -703,8 +699,8 @@ mod unit_tests {
             opt_type: OptType::Flag(OptTarget::Variable(String::from("debug"))),
             required: false,
             singleton: false,
-            assigned: false,
-            count_value: 0,
+            assigned: Cell::new(false),
+            count_value: Cell::new(0),
         }
     }
 
@@ -718,8 +714,8 @@ mod unit_tests {
             ),
             required: false,
             singleton: false,
-            assigned: false,
-            count_value: 0,
+            assigned: Cell::new(false),
+            count_value: Cell::new(0),
         }
     }
 
@@ -730,8 +726,8 @@ mod unit_tests {
             opt_type: OptType::Assignment(OptTarget::Variable(String::from("output_file"))),
             required: false,
             singleton: false,
-            assigned: false,
-            count_value: 0,
+            assigned: Cell::new(false),
+            count_value: Cell::new(0),
         }
     }
 
@@ -742,8 +738,8 @@ mod unit_tests {
             opt_type: OptType::Counter(OptTarget::Variable(String::from("verbosity"))),
             required: false,
             singleton: false,
-            assigned: false,
-            count_value: 0,
+            assigned: Cell::new(false),
+            count_value: Cell::new(0),
         }
     }
 

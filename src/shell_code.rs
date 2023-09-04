@@ -61,17 +61,15 @@ impl fmt::Display for VarValue {
     }
 }
 
-/**
- * CodeChunks represent single code lines that are used when generating
- * shell code.
- */
+///
+/// CodeChunks represent single code lines that are used when generating
+/// shell code.
+///
 //#[derive(Clone)]
 pub enum CodeChunk {
-    /// Seperator between code lines. Always ';'.
+    /// Separator between code lines. Always ';'.
     Separator,
 
-    DeclareLocalVar(String),
-    DeclareLocalIntVar(String),
     DeclareArrayVar(String),
 
     AssignVar(String, VarValue),
@@ -89,24 +87,19 @@ pub enum CodeChunk {
     FalseReturn,
 }
 
-/**
- * Code templates to translate CodeChunks to real shell script code.
- * Multiple instances are created for the supported shells.
- * Some fields might be set to an empty string, if a feature is not
- * supported by the shell.
- */
+///
+/// Code templates to translate CodeChunks to real shell script code.
+/// Multiple instances are created for the supported shells.
+/// Some fields might be set to an empty string, if a feature is not
+/// supported by the shell.
+///
 #[derive(Clone, Copy)]
 pub struct CodeTemplates {
     /** Whether the shell supports arrays. */
     pub supports_arrays: bool,
-    /** Whether the shell supports typeset. */
-    pub supports_local_vars: bool,
 
     /// Seperator between statements. Most likely always `;`.
     statement_separator: &'static str,
-
-    declare_local_variable: &'static str,
-    declare_local_int_variable: &'static str,
 
     declare_array_variable: &'static str,
 
@@ -126,9 +119,9 @@ pub struct CodeTemplates {
 }
 
 impl CodeTemplates {
-    /**
-     * Format a vector of CodeChunks into actual shell code.
-     */
+    ///
+    /// Format a vector of CodeChunks into actual shell code.
+    ///
     pub fn format_vector(&self, chunks: &[CodeChunk]) -> String {
         let mut str = String::new();
         let mut first = true;
@@ -143,25 +136,11 @@ impl CodeTemplates {
         str
     }
 
-    /**
-     * Format a vector of CodeChunks into actual shell code.
-     */
+    ///
+    /// Format a vector of CodeChunks into actual shell code.
+    ///
     pub fn format(&self, chunk: &CodeChunk) -> String {
         match chunk {
-            CodeChunk::DeclareLocalVar(name) => {
-                // Should be checked before whether this is supported.
-                if !self.supports_local_vars {
-                    panic!("Local variables not supported")
-                }
-                self.format_code_name(self.declare_local_variable, name)
-            }
-            CodeChunk::DeclareLocalIntVar(name) => {
-                // Should be checked before whether this is supported.
-                if !self.supports_local_vars {
-                    panic!("Local variables not supported")
-                }
-                self.format_code_name(self.declare_local_int_variable, name)
-            }
             CodeChunk::DeclareArrayVar(name) => {
                 // Should be checked before whether this is supported.
                 if !self.supports_arrays {
@@ -213,7 +192,7 @@ impl CodeTemplates {
         tmpl.replace("{VALUE}", &value.to_string())
     }
     /// Format code with the replacement marker `{ARGS}` as a space-separated
-    /// sequence of strings.
+    /// sequence of quoted strings.
     fn format_code_args(&self, tmpl: &str, args: &[String]) -> String {
         let mut args_str = String::new();
         for (idx, a) in args.iter().enumerate() {
@@ -222,24 +201,21 @@ impl CodeTemplates {
             }
             args_str.push_str(&VarValue::escape_string(a));
         }
-        tmpl.replace("{ARGS}", &args_str)
+        tmpl.replace("{ARGS}", &args_str).trim().to_string()
     }
     fn statement_separator(&self) -> &str {
         self.statement_separator
     }
 }
 
-/**
- * Actual code template for a sh-style shell.
- */
+///
+/// Actual code template for a sh-style shell.
+///
 const SH_TEMPLATE : CodeTemplates = CodeTemplates {
     supports_arrays : false,
-    supports_local_vars: false,
 
     statement_separator : ";\n",
 
-    declare_local_variable: "",
-    declare_local_int_variable: "",
     declare_array_variable: "",
 
     assign_variable : "{NAME}={VALUE}",
@@ -255,30 +231,13 @@ const SH_TEMPLATE : CodeTemplates = CodeTemplates {
     false_return: "false"
 };
 
-/**
- * Actual code template for the dash shell.
- */
-const DASH_TEMPLATE: CodeTemplates = CodeTemplates {
-    supports_arrays: false,
-    supports_local_vars: true,
-
-    declare_local_variable: "local {NAME}",
-    declare_local_int_variable: "local {NAME}",
-
-    // others from sh template
-    ..SH_TEMPLATE
-};
-
-/**
- * Actual code template for the bash shell.
- * Also used for zsh.
- */
+///
+/// Actual code template for the bash shell.
+/// Also used for zsh.
+///
 const BASH_TEMPLATE : CodeTemplates = CodeTemplates {
     supports_arrays : true,
-    supports_local_vars: true,
 
-    declare_local_variable: "typeset {NAME}",
-    declare_local_int_variable: "typeset -i {NAME}",
     declare_array_variable: "typeset -a {NAME}",
 
     assign_empty_array : "{NAME}=()",
@@ -290,9 +249,9 @@ const BASH_TEMPLATE : CodeTemplates = CodeTemplates {
     ..SH_TEMPLATE
 };
 
-/**
- * Actual code template for the ksh shell. Ksh92 or later, to be precise.
- */
+///
+/// Actual code template for the ksh shell. Ksh92 or later, to be precise.
+///
 const KSH_TEMPLATE: CodeTemplates = CodeTemplates {
     assign_empty_array: "set -A {NAME}",
 
@@ -300,15 +259,14 @@ const KSH_TEMPLATE: CodeTemplates = CodeTemplates {
     ..BASH_TEMPLATE
 };
 
-/**
- * Lookup the code templates for the given shell.
- */
+///
+/// Lookup the code templates for the given shell.
+///
 pub fn get_shell_template(shell: &str) -> Option<&CodeTemplates> {
     match shell {
         "bash" => Some(&BASH_TEMPLATE),
         "zsh" => Some(&BASH_TEMPLATE),
         "ksh" => Some(&KSH_TEMPLATE),
-        "dash" => Some(&DASH_TEMPLATE),
         "sh" => Some(&SH_TEMPLATE),
         _ => None,
     }
@@ -425,9 +383,6 @@ mod shell_template_test {
 
         let var_name = "name".to_string();
 
-        let chunk = CodeChunk::DeclareLocalVar(var_name.clone());
-        assert!(std::panic::catch_unwind(|| shell.format(&chunk)).is_err());
-
         let chunk =
             CodeChunk::AssignVar(var_name.clone(), VarValue::StringValue("value".to_string()));
         assert_eq!("name='value'", shell.format(&chunk));
@@ -465,10 +420,6 @@ mod shell_template_test {
 
         // Unsupported features
 
-        // typeset is not supported
-        let chunk = CodeChunk::DeclareLocalIntVar(var_name.clone());
-        assert!(std::panic::catch_unwind(|| shell.format(&chunk)).is_err());
-
         let chunk = CodeChunk::DeclareArrayVar(var_name.clone());
         assert!(std::panic::catch_unwind(|| shell.format(&chunk)).is_err());
 
@@ -486,10 +437,6 @@ mod shell_template_test {
 
         let var_name = "name".to_string();
 
-        let chunk = CodeChunk::DeclareLocalVar(var_name.clone());
-        assert_eq!("typeset name", shell.format(&chunk));
-        let chunk = CodeChunk::DeclareLocalIntVar(var_name.clone());
-        assert_eq!("typeset -i name", shell.format(&chunk));
         let chunk = CodeChunk::DeclareArrayVar(var_name.clone());
         assert_eq!("typeset -a name", shell.format(&chunk));
 
@@ -541,10 +488,6 @@ mod shell_template_test {
 
         let var_name = "name".to_string();
 
-        let chunk = CodeChunk::DeclareLocalVar(var_name.clone());
-        assert_eq!("typeset name", shell.format(&chunk));
-        let chunk = CodeChunk::DeclareLocalIntVar(var_name.clone());
-        assert_eq!("typeset -i name", shell.format(&chunk));
         let chunk = CodeChunk::DeclareArrayVar(var_name.clone());
         assert_eq!("typeset -a name", shell.format(&chunk));
 

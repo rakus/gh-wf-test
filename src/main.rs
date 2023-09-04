@@ -11,6 +11,7 @@ mod shell_code;
 
 use crate::shell_code::VarValue;
 use shell_code::CodeChunk;
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::ffi::OsString;
 use std::io::{stdout, IsTerminal};
@@ -22,6 +23,7 @@ use crate::opt_def::{OptConfig, OptTarget, OptType};
 use clap::{CommandFactory, Parser};
 
 const PARSEARGS: &str = env!("CARGO_PKG_NAME");
+const GIT_HASH: &str = env!("GIT_HASH_STATUS");
 
 /**
  * The default shell, if '-s' is not given.
@@ -78,11 +80,6 @@ struct CmdLineArgs {
     #[arg(short = 'i', long = "init-vars")]
     init_vars: bool,
 
-    /// Create local variables.
-    /// ONLY SUPPORTED WITH --shell dash, bash, ksh, or zsh.
-    #[arg(short = 'l', long = "local-vars")]
-    local_vars: bool,
-
     /// Enable support for --help as script option.
     #[arg(short = 'h', long = "help-opt", verbatim_doc_comment)]
     help_opt: bool,
@@ -128,10 +125,10 @@ fn die_internal(msg: String) -> ! {
  */
 fn parse_shell_name(arg: &str) -> Result<String, String> {
     for (idx, chr) in arg.chars().enumerate() {
-        if idx == 0 && !chr.is_alphabetic() {
+        if idx == 0 && !chr.is_ascii_alphabetic() {
             Err("Not a valid shell variable or function name")?
         }
-        if idx > 0 && !chr.is_alphanumeric() && chr != '_' {
+        if idx > 0 && !chr.is_ascii_alphanumeric() && chr != '_' {
             Err("Not a valid shell variable or function name")?
         }
     }
@@ -145,7 +142,6 @@ fn parse_shell_name(arg: &str) -> Result<String, String> {
 fn shell_init_code(
     opt_cfg_list: &Vec<OptConfig>,
     cmd_line_args: &CmdLineArgs,
-    local_vars: bool,
     init_vars: bool,
 ) -> Vec<CodeChunk> {
     let mut init_code: Vec<CodeChunk> = vec![];
@@ -173,21 +169,6 @@ fn shell_init_code(
     }
     // ... then typset and counter variables
     let mut handled_vars: Vec<String> = vec![];
-    if local_vars {
-        for opt_cfg in opt_cfg_list {
-            let name = opt_cfg.get_target_name();
-
-            if opt_cfg.is_target_variable() && !handled_vars.contains(&name) {
-                init_code.push(match &opt_cfg.opt_type {
-                    OptType::Counter(_) => CodeChunk::DeclareLocalIntVar(name.clone()),
-                    _ => CodeChunk::DeclareLocalVar(name.clone()),
-                });
-                handled_vars.push(name.clone());
-            }
-        }
-    }
-
-    handled_vars.clear();
 
     for opt_cfg in opt_cfg_list {
         let name = opt_cfg.get_target_name();
@@ -227,9 +208,9 @@ fn shell_init_code(
  * The values "false" and "no" result in `false`.
  * Check is case-insensitive.
  *
- * `None` results in `false`.
+ * `None` results in given default value.
  */
-fn some_str_to_bool(ostr: Option<&String>, default: bool) -> Result<bool, String> {
+fn optional_str_to_bool(ostr: Option<&String>, default: bool) -> Result<bool, String> {
     match ostr {
         Some(v) => match v.to_lowercase().trim() {
             "true" | "yes" => Ok(true),
@@ -237,6 +218,25 @@ fn some_str_to_bool(ostr: Option<&String>, default: bool) -> Result<bool, String
             _ => Err(format!("Invalid boolean value: '{}'", v)),
         },
         None => Ok(default),
+    }
+}
+
+/**
+ * Optional String to optional u16.
+ *
+ * Returns Err on invalid value.
+ * If input is None results in None
+ */
+fn optional_string_to_optional_u16(value: Option<&String>) -> Result<Option<u16>, String> {
+    match value {
+        Some(v) => {
+            let cnt = match v.parse::<u16>() {
+                Ok(v) => v,
+                Err(_) => Err(format!("Invalid unsigned integer (0-65535): '{}'", v))?,
+            };
+            Ok(Some(cnt))
+        }
+        None => Ok(None),
     }
 }
 
@@ -289,22 +289,23 @@ fn parse_shell_options(
         }
     }
 
-    let mut cl_tok = CmdLineTokenizer::build(script_args, cmd_line_args.posix);
+    let mut cl_tok = CmdLineTokenizer::new(script_args, cmd_line_args.posix);
 
     let mut after_separator = false;
+    let mut prev_counter: Option<(&OptTarget, u16)> = None;
 
     while let Some(e) = cl_tok.next() {
         if let CmdLineElement::Separator = e {
+            prev_counter = counter_assign(&mut shell_code, prev_counter);
             after_separator = true;
             continue;
         } else if let CmdLineElement::Argument(value) = e {
-            if after_separator && cmd_line_args.remainder.is_some() {
-                if let Some(array) = &cmd_line_args.remainder {
-                    shell_code.push(CodeChunk::AddToArray(
-                        array.clone(),
-                        VarValue::StringValue(value),
-                    ));
-                }
+            prev_counter = counter_assign(&mut shell_code, prev_counter);
+            if let (true, Some(array)) = (after_separator, &cmd_line_args.remainder) {
+                shell_code.push(CodeChunk::AddToArray(
+                    array.clone(),
+                    VarValue::StringValue(value),
+                ));
             } else if let Some(func) = &cmd_line_args.arg_callback {
                 shell_code.push(CodeChunk::CallFunction(
                     func.clone(),
@@ -319,20 +320,17 @@ fn parse_shell_options(
                 _ => None,
             };
 
-            let option = (
-                opt_cfg_list.iter_mut().find(|cfg| cfg.match_option(&e)),
-                opt_value,
-            );
+            let opt_config = opt_cfg_list.iter().find(|cfg| cfg.match_option(&e));
 
-            if option.0.is_none() {
+            if opt_config.is_none() {
                 return Err(format!("Unknown option: {}", e));
-            } else if let Some(oc) = option.0 {
+            } else if let Some(oc) = opt_config {
                 // Check duplicate options. Counter options and options that trigger a function call
                 // can be used multiple times.
-                if oc.assigned && !oc.is_duplicate_allowed() {
+                if oc.assigned.get() && !oc.is_duplicate_allowed() {
                     return Err(format!("Duplicate option: {} ({})", e, oc.options_string()));
                 }
-                oc.assigned = true;
+                oc.assigned.set(true);
 
                 if oc.singleton {
                     shell_code.clear();
@@ -340,11 +338,13 @@ fn parse_shell_options(
 
                 match &oc.opt_type {
                     OptType::Flag(target) => {
-                        let bool_val = VarValue::BoolValue(some_str_to_bool(option.1, true)?);
+                        prev_counter = counter_assign(&mut shell_code, prev_counter);
+                        let bool_val = VarValue::BoolValue(optional_str_to_bool(opt_value, true)?);
                         shell_code.push(assign_target(target, bool_val));
                     }
                     OptType::ModeSwitch(target, value) => {
-                        if option.1.is_some() {
+                        prev_counter = counter_assign(&mut shell_code, prev_counter);
+                        if opt_value.is_some() {
                             Err(format!("{}: No value supported.", oc.options_string()))?;
                         }
                         // Conflict detection is done at end of processing.
@@ -352,7 +352,8 @@ fn parse_shell_options(
                             .push(assign_target(target, VarValue::StringValue(value.clone())));
                     }
                     OptType::Assignment(target) => {
-                        let opt_arg = match option.1 {
+                        prev_counter = counter_assign(&mut shell_code, prev_counter);
+                        let opt_arg = match opt_value {
                             Some(v) => Some(v.clone()),
                             None => cl_tok.get_option_argument(),
                         };
@@ -363,38 +364,17 @@ fn parse_shell_options(
                         }
                     }
                     OptType::Counter(target) => {
-                        let value = match option.1 {
-                            Some(v) => {
-                                let cnt = match v.parse::<u16>() {
-                                    Ok(v) => v,
-                                    Err(_) => {
-                                        return Err(format!(
-                                            "Invalid unsigned integer in value of option {}",
-                                            e
-                                        ));
-                                    }
-                                };
-                                Some(cnt)
-                            }
-                            None => None,
-                        };
-                        match value {
-                            Some(v) => {
-                                oc.count_value = v;
-                            }
-                            None => {
-                                oc.count_value += 1;
+                        if let Some((prev_target, _)) = prev_counter {
+                            if prev_target != target {
+                                counter_assign(&mut shell_code, prev_counter);
                             }
                         }
 
-                        /*
-                        TODO: -vvv should only output one 'verbose=3'
-                        Also -vvv -d -v should output 'verbose=3; debug=true; verbose=4'
-                        */
-                        shell_code.push(assign_target(
-                            target,
-                            VarValue::IntValue(oc.count_value as i32),
-                        ));
+                        let value = optional_string_to_optional_u16(opt_value)?;
+                        oc.count_value
+                            .set(value.unwrap_or(oc.count_value.get() + 1));
+
+                        prev_counter = Some((target, oc.count_value.get()));
                     }
                 }
 
@@ -405,6 +385,7 @@ fn parse_shell_options(
             }
         }
     }
+    counter_assign(&mut shell_code, prev_counter);
 
     // Check duplicates for ModeSwitches
     // and handle required
@@ -414,7 +395,7 @@ fn parse_shell_options(
             let mut all_tab = vec![];
             let mut required = false;
             for idx in shell_name_table.get(name).unwrap() {
-                if opt_cfg_list[*idx].assigned {
+                if opt_cfg_list[*idx].assigned.get() {
                     used_tab.push(opt_cfg_list[*idx].options_string());
                 }
                 all_tab.push(opt_cfg_list[*idx].options_string());
@@ -440,7 +421,7 @@ fn parse_shell_options(
             match oc.opt_type {
                 OptType::ModeSwitch(_, _) => (),
                 _ => {
-                    if oc.required && !oc.assigned {
+                    if oc.required && !oc.assigned.get() {
                         return Err(format!(
                             "Required option not found: {}",
                             oc.options_string()
@@ -454,6 +435,22 @@ fn parse_shell_options(
     shell_code.push(CodeChunk::SetArgs(arguments));
 
     Ok(shell_code)
+}
+
+/**
+ * If counter is not None, creates the counter assignment.
+ * Always returns None
+ */
+fn counter_assign<'a>(
+    shell_code: &mut Vec<CodeChunk>,
+    counter: Option<(&'a OptTarget, u16)>,
+) -> Option<(&'a OptTarget, u16)> {
+    if let Some((target, value)) = counter {
+        shell_code.push(assign_target(target, VarValue::IntValue(value as i32)));
+        None
+    } else {
+        counter
+    }
 }
 
 /**
@@ -566,8 +563,8 @@ fn parseargs(cmd_line_args: CmdLineArgs) -> ! {
             opt_type: OptType::Flag(OptTarget::Function("show_help".to_string())),
             required: false,
             singleton: true,
-            assigned: false,
-            count_value: 0,
+            assigned: Cell::new(false),
+            count_value: Cell::new(0),
         });
     }
     // Add support for `--version` if requested.
@@ -579,8 +576,8 @@ fn parseargs(cmd_line_args: CmdLineArgs) -> ! {
             opt_type: OptType::Flag(OptTarget::Function("show_version".to_string())),
             required: false,
             singleton: true,
-            assigned: false,
-            count_value: 0,
+            assigned: Cell::new(false),
+            count_value: Cell::new(0),
         });
     }
 
@@ -604,22 +601,10 @@ fn parseargs(cmd_line_args: CmdLineArgs) -> ! {
         ));
     }
 
-    if cmd_line_args.local_vars && !shell_tmpl.supports_local_vars {
-        die_internal(format!(
-            "Shell {} does not support local variables, so option -l/--local-vars is not supported",
-            shell
-        ));
-    }
-
     let mut code: Vec<CodeChunk> = vec![];
 
     // generate initialization code. Check for functions, initialize variables
-    let mut init_code = shell_init_code(
-        &opt_cfg_list,
-        &cmd_line_args,
-        cmd_line_args.local_vars,
-        cmd_line_args.init_vars,
-    );
+    let mut init_code = shell_init_code(&opt_cfg_list, &cmd_line_args, cmd_line_args.init_vars);
 
     // let options_code = parse_shell_options(&opt_cfg_list, &cmd_line_args);
     let rc = match parse_shell_options(&mut opt_cfg_list, &cmd_line_args) {
@@ -655,8 +640,9 @@ fn main() {
                 println!("{}", help_str);
                 exit(0);
             } else if c.version {
-                let version_str = CmdLineArgs::command().render_version();
-                println!("{}", version_str);
+                let cmd = CmdLineArgs::command();
+                let version_str = cmd.get_version().unwrap_or("UNKNOWN");
+                println!("parseargs {} ({})", version_str, GIT_HASH);
                 exit(0);
             }
 

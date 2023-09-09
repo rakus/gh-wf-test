@@ -8,4 +8,18 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 
 ## [0.1.0] - 2023-09-09
 
-Initial Release
+### Fixed
+
+* Windows: backslash in file pathes result in invalid code generated
+* Invalid syntax in examples in README and FAQ
+
+### Added
+
+* CI build with Windows
+
+### Changed
+
+* Property to skip is now `properties-constants.skip`
+
+
+[0.1.0] https://github.com/rakus/parseargs/releases/tag/v0.1.0

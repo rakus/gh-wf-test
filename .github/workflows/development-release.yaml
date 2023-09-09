@@ -23,12 +23,12 @@ jobs:
     steps:
     - name: Create Snapshot Release
       id:   create_snapshot_release
-      uses: marvinpinto/action-automatic-releases@latest
+      uses: softprops/action-gh-release@v1
       with:
-        repo_token: "${{ secrets.GITHUB_TOKEN }}"
-        automatic_release_tag: "snapshot-release"
+        token: "${{ secrets.GITHUB_TOKEN }}"
+        tag_name: "snapshot-release"
         prerelease: true
-        title: "Snapshot Release"
+        name: "Snapshot Release"
 
   build:
     needs:

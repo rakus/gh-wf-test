@@ -21,6 +21,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Current date
+      id: date
+      run: echo "NOW=$(date "+%Y-%m-%dT%H:%M:%S%z")" >> $GITHUB_OUTPUT
+
     - name: Create Snapshot Release
       id:   create_snapshot_release
       uses: softprops/action-gh-release@v1
@@ -28,7 +32,7 @@ jobs:
         token: "${{ secrets.GITHUB_TOKEN }}"
         tag_name: "snapshot-release"
         prerelease: true
-        name: "Snapshot Release"
+        name: "Snapshot Release - ${{ steps.date.outputs.now }}"
 
   build:
     needs:
@@ -60,23 +64,23 @@ jobs:
       with:
         crate: cargo-get
 
-    - name: Install cargo-generate-rpm
+    - name: Install cargo-generate-rpm (linux only)
       if: ${{ matrix.os=='linux' }}
       uses: baptiste0928/cargo-install@v2
       with:
         crate: cargo-generate-rpm
 
-    - name: Install cargo-deb
+    - name: Install cargo-deb (linux only)
       if: ${{ matrix.os=='linux' }}
       uses: baptiste0928/cargo-install@v2
       with:
         crate: cargo-deb
 
-    - name: Install Shells
+    - name: Install Shells (linux only)
       if: ${{ matrix.os=='linux' }}
       run: sudo apt-get install -y -qq ksh zsh
 
-    - name: Install MKSH (if available)
+    - name: Install MKSH (if available, linux only)
       if: ${{ matrix.os=='linux' }}
       run: sudo apt-get install -y mksh || true
 
@@ -95,14 +99,14 @@ jobs:
     - name: Install AsciiDoctor gems
       run: gem install asciidoctor pygments.rb
 
-    - name: Build RPM and DEB
+    - name: Build RPM and DEB (linux only)
       if: ${{ matrix.os=='linux' }}
       run: make pkg
 
     - name: Build tar.gz
       run: make tar
 
-    - name: Upload RPM
+    - name: Upload RPM (linux only)
       if: ${{ matrix.os=='linux' }}
       uses: svenstaro/upload-release-action@v2
       with:
@@ -112,7 +116,7 @@ jobs:
         overwrite: true
         repo_token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Upload DEB
+    - name: Upload DEB (linux only)
       if: ${{ matrix.os=='linux' }}
       uses: svenstaro/upload-release-action@v2
       with:

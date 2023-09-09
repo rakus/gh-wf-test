@@ -16,8 +16,8 @@ permissions:
   pull-requests: "read"
 
 jobs:
-  create_release:
-    name: Create Release
+  create_snapshot_release:
+    name: Create Snapshot Release
     runs-on: ubuntu-latest
 
     steps:
@@ -36,7 +36,7 @@ jobs:
 
   build:
     needs:
-      - create_release
+      - create_snapshot_release
     runs-on: '${{ matrix.runs_on }}'
     strategy:
       matrix:

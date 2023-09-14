@@ -43,9 +43,13 @@ jobs:
       if: ${{ matrix.os=='linux' }}
       run: sudo apt-get install -y mksh || true
 
-    - name: Install current Bash on macOS
+    - name: Install current Bash (macOS)
       if: ${{ matrix.os=='macos' }}
       run: brew install bash
+
+    - name: Install current ksh93 (macOS)
+      if: ${{ matrix.os=='macos' }}
+      run: brew install ksh93
 
     - name: Install shellcheck  on macOS
       if: ${{ matrix.os=='macos' }}

@@ -91,6 +91,14 @@ jobs:
       if: ${{ matrix.os=='macos' }}
       run: brew install bash
 
+    - name: Install current ksh93 (macOS)
+      if: ${{ matrix.os=='macos' }}
+      run: brew install ksh93
+
+    - name: Install shellcheck  (macOS)
+      if: ${{ matrix.os=='macos' }}
+      run: brew install shellcheck
+
     - name: Install SHELLCHECK (windows only)
       if: ${{ matrix.os=='windows' }}
       run: choco install shellcheck

@@ -47,6 +47,9 @@ jobs:
           - os: windows
             runs_on: windows-latest
             suffix: .exe
+          - os: macos
+            runs_on: macos-latest
+            suffix: ''
 
     steps:
     - uses: actions/checkout@v3
@@ -83,6 +86,10 @@ jobs:
     - name: Install MKSH (if available, linux only)
       if: ${{ matrix.os=='linux' }}
       run: sudo apt-get install -y mksh || true
+
+    - name: Install current Bash on macOS
+      if: ${{ matrix.os=='macos' }}
+      run: brew install bash
 
     - name: Install SHELLCHECK (windows only)
       if: ${{ matrix.os=='windows' }}
